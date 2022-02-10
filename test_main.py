@@ -19,7 +19,6 @@ def test_question_for_pupil_wrong(monkeypatch):
 #    assert question_id == get_pupil_from_db(user_id)
 
 
-def test_get_exercise_from_db():
-    exercise =('question2', 'wrong answer1, wrong answer2, wrong answer3, right_answer', 'right_answer')
-    print(get_exercise_from_db(111111))
-    assert exercise == get_exercise_from_db(111111)
+def test_get_pupil_from_db():
+    exercise =('Andrew','question2', 'wrong answer1, wrong answer2, wrong answer3, right_answer', 'right_answer')
+    assert exercise == get_pupil_from_db(111111)
