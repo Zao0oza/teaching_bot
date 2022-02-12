@@ -1,8 +1,28 @@
-from random import shuffle
-
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 import passwords
+
+
+def sql_conn(sql_request, values: tuple = None):
+    '''
+    Принимает в себя sql запрос и перемнные,
+    Соединяется с Бд
+    Возвращает результат
+    '''
+    connection = psycopg2.connect(user="postgres",
+                                  # пароль, который указали при установке PostgreSQL
+                                  password="453800",
+                                  host="127.0.0.1",
+                                  port="5433",
+                                  database="teaching_bot_db")
+    connection.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    # Курсор для выполнения операций с базой данных
+    cursor = connection.cursor()
+    cursor.execute(sql_request, values)
+    sql_result = cursor.fetchone()
+    cursor.close()
+    connection.close()
+    return sql_result
 
 
 def exercise_for_pupil(exercise):
@@ -13,7 +33,7 @@ def exercise_for_pupil(exercise):
     """
     question, choices, right_answer = [x for x in exercise]
     print(choices)
-    #shuffle(choices)
+    # shuffle(choices)
     print(choices, right_answer)
 
     answer = input()
@@ -109,5 +129,4 @@ sql = """ UPDATE vendors
                 SET vendor_name = %s
                 WHERE vendor_id = %s"""
 
-#print(exercise_for_pupil(get_exercise_from_db(111111)))
-
+# print(exercise_for_pupil(get_exercise_from_db(111111)))
