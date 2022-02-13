@@ -1,5 +1,6 @@
 import pytest
-from main import *
+from bot import *
+from unittest.mock import AsyncMock
 
 
 def test_get_pupil_from_db():
@@ -8,4 +9,5 @@ def test_get_pupil_from_db():
                     JOIN pupils on pupils.cur_exercise=exercises.exercise_id
                     WHERE pupil_id =%s 
                     """, (111111,))
+
 
