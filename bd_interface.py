@@ -16,8 +16,9 @@ try:
     create_table_query = '''CREATE TABLE exercises
                              (EXERCISE_ID         SERIAL  primary key, 
                               EXERCISE           TEXT    NOT NULL,
-                             CHOICES         TEXT    NOT NULL,
-                             RIGHT_ANSWER TEXT    NOT NULL); '''
+                             CHOICES         TEXT ,
+                             RIGHT_ANSWER TEXT    NOT NULL,
+                             LESSON INTEGER NOT NULL); '''
     # Выполнение команды: это создает новую таблицу
     cursor.execute(create_table_query)
     connection.commit()

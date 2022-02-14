@@ -48,6 +48,8 @@ def sql_conn(sql_request, values: tuple = None):
     return sql_result
 
 
+# получаем номер последнего урока чтобы
+
 class Form(StatesGroup):
     """
     Класс состояний для реализации конечных автоматов
@@ -55,6 +57,7 @@ class Form(StatesGroup):
     waiting_for_name = State()
     waiting_for_answer = State()
     finished = State()
+    waiting_check=State()
 
 
 @dp.message_handler(commands="start")
@@ -71,71 +74,81 @@ async def cmd_start(message: types.Message):
     pupil_info = sql_conn(sql_request, (message.from_user.id,))
     if pupil_info:
         await message.answer(f"С возвращением {pupil_info[0]}!", reply_markup=types.ReplyKeyboardRemove())
-        await sleep(1)
+        await Form.waiting_for_answer.set()
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(types.InlineKeyboardButton(text="Да", callback_data="send_answer"))
         await message.answer("Хотите продолжить учебу?", reply_markup=keyboard)
+
     else:
         await Form.waiting_for_name.set()
         await message.answer("Добро пожаловать! Как вас зовут?")
 
 
-@dp.callback_query_handler(text="send_answer")
-async def send_answer(call: types.CallbackQuery):
+@dp.message_handler(state=Form.waiting_for_answer)
+async def send_answer(message: types.CallbackQuery, state: FSMContext):
     """
     Отправляет вопрос ученику
     """
-    sql_request = """SELECT PUPIL_NAME, EXERCISE, CHOICES, RIGHT_ANSWER 
+    sql_request = """SELECT PUPIL_NAME, EXERCISE, CHOICES, RIGHT_ANSWER, EXERCISE_ID, LESSON 
                    FROM public.exercises
                    JOIN pupils on pupils.cur_exercise=exercises.exercise_id
                    WHERE pupil_id =%s """
-    try:
-        pupil_info = sql_conn(sql_request, (call.from_user.id,))
-    except:
-        await Form.finshed.set()
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton(text="Да", callback_data="reset_user"))
-        await call.answer(
-            "Поздравляю вы закончили наш курс, надеюсь вамвпонравилось!!!/nХотите сбросить прогресс и начать курс заново?",
-            reply_markup=keyboard)
-
+    pupil_info = sql_conn(sql_request, (message.from_user.id,))
+    keyboard = types.InlineKeyboardMarkup()
     # задаем глобальные перемнные для уменьшения количества sql запросов
-    global name, question, choices, right_answer
-    name, question, choices, right_answer = [x for x in pupil_info[0:4]]
-    choices = choices.split(',')
-    await call.message.answer(question)
+    global name, right_answer, lesson, exercise_id
+    name, question, choices, right_answer, exercise_id, lesson = [x for x in pupil_info[0:6]]
+    choices += right_answer
+    choices = choices.split(';')
+    await message.answer(question)
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(*choices)
-    await call.message.answer(choices, reply_markup=keyboard)
-    await Form.waiting_for_answer.set()
+    await message.answer(choices, reply_markup=keyboard)
+    await Form.waiting_check.set()
 
 
-@dp.message_handler(state=Form.waiting_for_answer)
+@dp.message_handler(state=Form.waiting_check)
 async def check_answer(message: types.Message, state: FSMContext):
     """
     Получает и проверяет ответ
     """
-    try:
-        if message.text == right_answer:
-            await message.answer(f"Верно, Красава {name}!", reply_markup=types.ReplyKeyboardRemove())
+    if message.text == right_answer:
+
+        await message.answer(f"Верно, Красава {name}!", reply_markup=types.ReplyKeyboardRemove())
+        sql_request = """SELECT MAX(EXERCISE_ID) FROM public.exercises
+                                        GROUP BY LESSON
+                                        HAVING LESSON = %s"""
+        last_exersize = sql_conn(sql_request, (lesson,))
+        if last_exersize[0] != exercise_id:
             sql_request = """ UPDATE pupils 
-                            SET CUR_EXERCISE = CUR_EXERCISE + 1, ANSWERED = current_timestamp
-                            WHERE pupil_id = %s"""
-            pupil_info = sql_conn(sql_request, (message.from_user.id,))
-            await state.finish()
-            await sleep(1)
-            keyboard = types.InlineKeyboardMarkup()
-            keyboard.add(types.InlineKeyboardButton(text="Да", callback_data="send_answer"))
-            await message.answer("Следующее задание", reply_markup=keyboard)
+                                SET CUR_EXERCISE = CUR_EXERCISE + 1, ANSWERED = current_timestamp
+                                WHERE pupil_id = %s"""
+            sql_conn(sql_request, (message.from_user.id,))
+            await Form.waiting_for_answer.set()
         else:
-            await message.answer(f"Неверно, ну ты и дон-дон {name}!")
-    except:
-        await state.finish()
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton(text="Да", callback_data="reset_user"))
-        await message.answer(
-            "Поздравляю вы закончили наш курс, надеюсь вамвпонравилось!!!/nХотите сбросить прогресс и начать курс заново?",
-            reply_markup=keyboard)
+            # получаем номер последнего урока и проверяем есть ли еще уроки
+            sql_request = """SELECT MAX(LESSON) FROM public.exercises"""
+            last_lesson = sql_conn(sql_request)
+            if last_lesson[0] != lesson:
+                sql_request = """ UPDATE pupils 
+                                                SET CUR_EXERCISE = CUR_EXERCISE + 1, ANSWERED = current_timestamp
+                                                WHERE pupil_id = %s"""
+                sql_conn(sql_request, (message.from_user.id,))
+                await Form.waiting_for_answer.set()
+                keyboard = types.InlineKeyboardMarkup()
+                keyboard.add(types.InlineKeyboardButton(text="Да", callback_data="send_answer"))
+                await message.answer(f"Молодец! Урок {lesson} успешно пройден\n Готовы перейти к следующему уроку?",
+                                     reply_markup=keyboard)
+            else:
+                await state.finish()
+                keyboard = types.InlineKeyboardMarkup()
+                keyboard.add(types.InlineKeyboardButton(text="Да", callback_data="reset_user"))
+                await message.answer(
+                    "Поздравляю вы закончили наш курс, надеюсь вамв понравилось!!!\nХотите сбросить прогресс и начать "
+                    "курс заново?",
+                    reply_markup=keyboard)
+    else:
+        await message.answer(f"Неверно, ну ты и дон-дон {name}!")
 
 
 @dp.message_handler(state=Form.waiting_for_name)
@@ -157,8 +170,9 @@ async def process_name(message: types.Message, state: FSMContext):
     await message.answer("Хотите начать учебу?", reply_markup=keyboard)
 
 
+@dp.callback_query_handler(state=Form.finished)
 @dp.callback_query_handler(text="reset_user")
-async def reset_user(call: types.Message, state: FSMContext):
+async def reset_user(call: types.CallbackQuery, state: FSMContext):
     sql_request = """ UPDATE pupils 
                         SET CUR_EXERCISE = 1
                         WHERE pupil_id = %s"""

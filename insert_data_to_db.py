@@ -2,7 +2,7 @@ import psycopg2
 from psycopg2 import Error
 import passwords
 
-def exercise_to_db(exercise,choices,right_answer):
+def exercise_to_db(exercise,choices,right_answer,lesson):
     try:
         # Подключение к существующей базе данных
         connection = psycopg2.connect(user="postgres",
@@ -14,8 +14,8 @@ def exercise_to_db(exercise,choices,right_answer):
         # Курсор для выполнения операций с базой данных
         cursor = connection.cursor()
         # Распечатать сведения о PostgreSQL
-        insert_query = """ INSERT INTO exercises (EXERCISE, CHOICES, RIGHT_ANSWER) VALUES (%s, %s, %s)"""
-        cursor.execute(insert_query,(exercise, choices, right_answer))
+        insert_query = """ INSERT INTO exercises (EXERCISE, CHOICES, RIGHT_ANSWER, LESSON) VALUES (%s, %s, %s, %s)"""
+        cursor.execute(insert_query,(exercise, choices, right_answer, lesson))
         connection.commit()
         cursor.close()
         connection.close()
@@ -62,4 +62,11 @@ choices='wrong answer1, wrong answer2, wrong answer3, right_answer'
 right_answer= 'right_answer'
 exercise_to_db(exercise,choices,right_answer)
 '''
-pupil_to_db(2,'Vova')
+pupil_to_db(1,'test_pupil')
+'''
+exercise=['question'+str(x) for x in range(0,6)]
+choices='wrong answer;'*4
+right_answer='right_answer'
+lesson=[1,1,1,2,2,3]
+for i in range(0,6):
+    exercise_to_db(exercise[i],choices,right_answer,lesson[i])'''
