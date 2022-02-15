@@ -75,8 +75,8 @@ async def cmd_start(message: types.Message):
     if pupil_info:
         await message.answer(f"С возвращением {pupil_info[0]}!", reply_markup=types.ReplyKeyboardRemove())
         await Form.waiting_for_answer.set()
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton(text="Да", callback_data="send_answer"))
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        keyboard.add('Да')
         await message.answer("Хотите продолжить учебу?", reply_markup=keyboard)
 
     else:
@@ -85,7 +85,7 @@ async def cmd_start(message: types.Message):
 
 
 @dp.message_handler(state=Form.waiting_for_answer)
-async def send_answer(message: types.CallbackQuery, state: FSMContext):
+async def send_answer(message: types.CallbackQuery):
     """
     Отправляет вопрос ученику
     """
@@ -124,7 +124,8 @@ async def check_answer(message: types.Message, state: FSMContext):
                                 SET CUR_EXERCISE = CUR_EXERCISE + 1, ANSWERED = current_timestamp
                                 WHERE pupil_id = %s"""
             sql_conn(sql_request, (message.from_user.id,))
-            await Form.waiting_for_answer.set()
+            await send_answer(message)
+            #await Form.waiting_for_answer.set()
         else:
             # получаем номер последнего урока и проверяем есть ли еще уроки
             sql_request = """SELECT MAX(LESSON) FROM public.exercises"""
@@ -135,8 +136,8 @@ async def check_answer(message: types.Message, state: FSMContext):
                                                 WHERE pupil_id = %s"""
                 sql_conn(sql_request, (message.from_user.id,))
                 await Form.waiting_for_answer.set()
-                keyboard = types.InlineKeyboardMarkup()
-                keyboard.add(types.InlineKeyboardButton(text="Да", callback_data="send_answer"))
+                keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+                keyboard.add('Да')
                 await message.answer(f"Молодец! Урок {lesson} успешно пройден\n Готовы перейти к следующему уроку?",
                                      reply_markup=keyboard)
             else:
@@ -144,7 +145,7 @@ async def check_answer(message: types.Message, state: FSMContext):
                 keyboard = types.InlineKeyboardMarkup()
                 keyboard.add(types.InlineKeyboardButton(text="Да", callback_data="reset_user"))
                 await message.answer(
-                    "Поздравляю вы закончили наш курс, надеюсь вамв понравилось!!!\nХотите сбросить прогресс и начать "
+                    "Поздравляю вы закончили наш курс, надеюсь вам понравилось!!!\nХотите сбросить прогресс и начать "
                     "курс заново?",
                     reply_markup=keyboard)
     else:
