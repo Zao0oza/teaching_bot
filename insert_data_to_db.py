@@ -3,7 +3,7 @@ from random import random, randint
 
 import psycopg2
 from psycopg2 import Error
-import passwords
+from passwords import *
 
 
 def exercise_to_db(exercise, choices, right_answer, lesson):
@@ -11,10 +11,10 @@ def exercise_to_db(exercise, choices, right_answer, lesson):
         # Подключение к существующей базе данных
         connection = psycopg2.connect(user="postgres",
                                       # пароль, который указали при установке PostgreSQL
-                                      password=passwords.password,
+                                      password=password_bd,
                                       host="127.0.0.1",
                                       port="5433",
-                                      database="teach_chinese_bot_db")
+                                      database="course_bot_db")
         # Курсор для выполнения операций с базой данных
         cursor = connection.cursor()
         # Распечатать сведения о PostgreSQL
@@ -34,10 +34,10 @@ def pupil_to_db(id, name):
         # Подключение к существующей базе данных
         connection = psycopg2.connect(user="postgres",
                                       # пароль, который указали при установке PostgreSQL
-                                      password=passwords.password,
+                                      password=password_bd,
                                       host="127.0.0.1",
                                       port="5433",
-                                      database="teach_chinese_bot_db")
+                                      database="course_bot_db")
         # Курсор для выполнения операций с базой данных
         cursor = connection.cursor()
         # Распечатать сведения о PostgreSQL
@@ -50,21 +50,41 @@ def pupil_to_db(id, name):
     except (Exception, Error) as error:
         print("Ошибка при работе с PostgreSQL", error)
 
-
-def lesson_to_db(id, name, start_messages, end_messages):
+def course_to_db(course_name, course_description, course_author, course_image):
     try:
         # Подключение к существующей базе данных
         connection = psycopg2.connect(user="postgres",
                                       # пароль, который указали при установке PostgreSQL
-                                      password=passwords.password,
+                                      password=password_bd,
                                       host="127.0.0.1",
                                       port="5433",
-                                      database="teach_chinese_bot_db")
+                                      database="course_bot_db")
         # Курсор для выполнения операций с базой данных
         cursor = connection.cursor()
         # Распечатать сведения о PostgreSQL
-        insert_query = """ INSERT INTO lesson (LESSON_ID,LESSON_NAME,START_MESSAGES,END_MESSAGES ) VALUES (%s,%s,%s,%s)"""
-        cursor.execute(insert_query, (id, name, start_messages, end_messages))
+        insert_query = """ INSERT INTO course (course_name,course_description,course_author, course_image ) VALUES (%s,%s,%s,%s)"""
+        cursor.execute(insert_query, (course_name, course_description, course_author, course_image))
+        connection.commit()
+        cursor.close()
+        connection.close()
+        print("Соединение с PostgreSQL закрыто")
+    except (Exception, Error) as error:
+        print("Ошибка при работе с PostgreSQL", error)
+
+def lesson_to_db(id, name, start_messages, end_messages,course_name):
+    try:
+        # Подключение к существующей базе данных
+        connection = psycopg2.connect(user="postgres",
+                                      # пароль, который указали при установке PostgreSQL
+                                      password=password_bd,
+                                      host="127.0.0.1",
+                                      port="5433",
+                                      database="course_bot_db")
+        # Курсор для выполнения операций с базой данных
+        cursor = connection.cursor()
+        # Распечатать сведения о PostgreSQL
+        insert_query = """ INSERT INTO lesson (LESSON_ID,LESSON_NAME,START_MESSAGES,END_MESSAGES, COURSE_NAME ) VALUES (%s,%s,%s,%s,%s)"""
+        cursor.execute(insert_query, (id, name, start_messages, end_messages,course_name))
         connection.commit()
         cursor.close()
         connection.close()
@@ -78,10 +98,10 @@ def image_to_db(image, lesson_id, start_image=False):
         # Подключение к существующей базе данных
         connection = psycopg2.connect(user="postgres",
                                       # пароль, который указали при установке PostgreSQL
-                                      password=passwords.password,
+                                      password=password_bd,
                                       host="127.0.0.1",
                                       port="5433",
-                                      database="teach_chinese_bot_db")
+                                      database="course_bot_db")
         # Курсор для выполнения операций с базой данных
         cursor = connection.cursor()
         # Распечатать сведения о PostgreSQL
@@ -108,7 +128,7 @@ def insert_for_db():
     for i in range(0, 5):
         choices = ['wrong_answer'] * randint(0, 4)
         exercise_to_db([exercise[i], exercise[i]], choices, right_answer, lesson[i])
-    pupil_to_db(1, 'test_pupil')
+    #pupil_to_db(1, 'test_pupil')
 
 
 def insert_for_chinese_db():
@@ -135,9 +155,10 @@ def insert_for_chinese_db():
                       'следующем сообщении ты найдёшь два файла с теорией: первый рассказывает о базовых принципах '
                       'использования комплемента направления, а во втором даются дополнительные значения сложных '
                       'комплементов. Второй файл будет полезен для тех, кто хочет полностью разобраться в этой теме🤓']
+    course_to_db('chinese_for_lamers','просто непонятное описание  и картинка','esther','chinese/course_image/1545000059_glavnuyu.jpg')
     lesson_to_db(1, 'Комплементы направления', start_messages,
                  ['Отлично😍 Ты со всем справился! Теперь можно и отдохнуть✨',
-                  'Кстати, завтра не будет никакой грамматики, обещаю!'])
+                  'Кстати, завтра не будет никакой грамматики, обещаю!'],'chinese_for_lamers')
     import os
     dirname = 'chinese/lesson1/'
     files = os.listdir(dirname)
