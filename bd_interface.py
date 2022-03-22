@@ -29,26 +29,27 @@ try:
     create_table_query = '''CREATE TABLE lesson
                                 (LESSON_ID         INTEGER    NOT NULL  primary key,
                                 LESSON_NAME      TEXT,
-                                START_MESSAGES      TEXT[],
-                                END_MESSAGES      TEXT[],
+                                THEORY TEXT[],
+                                END_MESSAGE TEXT[],
                                 COURSE_NAME TEXT,
-                                FOREIGN KEY (COURSE_NAME) REFERENCES COURSE (COURSE_NAME) ON DELETE SET DEFAULT)
+                                FOREIGN KEY (COURSE_NAME) REFERENCES COURSE (COURSE_NAME) ON DELETE CASCADE)
                                 ; '''
     # Выполнение команды: это создает новую таблицу
     cursor.execute(create_table_query)
     connection.commit()
     print("Таблица успешно создана в PostgreSQL")
+    """
     create_table_query = '''CREATE TABLE images
                                 (IMAGE_ID         SERIAL  primary key, 
                                 START_IMAGE boolean NOT NULL,
                                 IMAGE TEXT NOT NULL,
                                 LESSON INTEGER NOT NULL,
-                                FOREIGN KEY (LESSON) REFERENCES lesson (LESSON_ID) ON DELETE SET DEFAULT); 
+                                FOREIGN KEY (LESSON) REFERENCES lesson (LESSON_ID) ON DELETE SET NULL); 
                                                           '''
     # Выполнение команды: это создает новую таблицу
     cursor.execute(create_table_query)
     connection.commit()
-    print("Таблица успешно создана в PostgreSQL")
+    print("Таблица успешно создана в PostgreSQL")"""
     # Распечатать сведения о PostgreSQL
     create_table_query = '''CREATE TABLE exercises
                              (EXERCISE_ID         SERIAL  primary key, 
@@ -56,7 +57,7 @@ try:
                              CHOICES         TEXT[] ,
                              RIGHT_ANSWER TEXT    NOT NULL,
                              LESSON INTEGER NOT NULL,
-                             FOREIGN KEY (LESSON) REFERENCES lesson (LESSON_ID) ON DELETE SET DEFAULT); 
+                             FOREIGN KEY (LESSON) REFERENCES lesson (LESSON_ID) ON DELETE CASCADE); 
                                                        '''
     # Выполнение команды: это создает новую таблицу
     cursor.execute(create_table_query)
@@ -74,11 +75,11 @@ try:
     print("Таблица успешно создана в PostgreSQL")
     create_table_query = '''CREATE TABLE PUPIL_PROGRESS 
                             ( PUPIL_ID INTEGER,
-                            FOREIGN KEY (PUPIL_ID) REFERENCES pupils (PUPIL_ID) ON DELETE SET DEFAULT,
+                            FOREIGN KEY (PUPIL_ID) REFERENCES pupils (PUPIL_ID) ON DELETE  SET NULL,
                              CUR_EXERCISE INTEGER,
-                             FOREIGN KEY (CUR_EXERCISE) REFERENCES exercises (EXERCISE_ID) ON DELETE SET DEFAULT,
+                             FOREIGN KEY (CUR_EXERCISE) REFERENCES exercises (EXERCISE_ID) ON DELETE  SET NULL,
                              COURSE_NAME TEXT,  
-                             FOREIGN KEY (COURSE_NAME) REFERENCES COURSE (COURSE_NAME) ON DELETE SET DEFAULT); '''
+                             FOREIGN KEY (COURSE_NAME) REFERENCES COURSE (COURSE_NAME) ON DELETE  SET NULL); '''
 
     # Выполнение команды: это создает новую таблицу
     cursor.execute(create_table_query)
