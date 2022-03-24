@@ -18,7 +18,7 @@ def exercise_to_db(exercise, choices, right_answer, lesson):
         # Курсор для выполнения операций с базой данных
         cursor = connection.cursor()
         # Распечатать сведения о PostgreSQL
-        insert_query = """ INSERT INTO exercises (EXERCISE, CHOICES, RIGHT_ANSWER, LESSON) VALUES (%s, %s, %s, %s)"""
+        insert_query = """ INSERT INTO exercises (EXERCISE, CHOICES, RIGHT_ANSWER, LESSON_ID) VALUES (%s, %s, %s, %s)"""
         cursor.execute(insert_query, (exercise, choices, right_answer, lesson))
         connection.commit()
         cursor.close()
@@ -73,7 +73,7 @@ def course_to_db(course_name, course_description, course_author, course_image):
         print("Ошибка при работе с PostgreSQL", error)
 
 
-def lesson_to_db(id, name, theory,end_message, course_name):
+def lesson_to_db( name, theory,end_message, course_name):
     try:
         # Подключение к существующей базе данных
         connection = psycopg2.connect(user="postgres",
@@ -85,8 +85,8 @@ def lesson_to_db(id, name, theory,end_message, course_name):
         # Курсор для выполнения операций с базой данных
         cursor = connection.cursor()
         # Распечатать сведения о PostgreSQL
-        insert_query = """ INSERT INTO lesson (LESSON_ID,LESSON_NAME, THEORY,end_message, COURSE_NAME ) VALUES (%s,%s,%s,%s,%s)"""
-        cursor.execute(insert_query, (id, name, theory,end_message, course_name))
+        insert_query = """ INSERT INTO lesson (LESSON_NAME, THEORY,end_message, COURSE_NAME ) VALUES (%s,%s,%s,%s)"""
+        cursor.execute(insert_query, (name, theory,end_message, course_name))
         connection.commit()
         cursor.close()
         connection.close()
@@ -166,7 +166,7 @@ def insert_for_chinese_db():
     end_message=['Отлично😍 Ты со всем справился! Теперь можно и отдохнуть✨','Кстати, завтра не будет никакой грамматики, обещаю!']
     course_to_db('chinese_for_lamers', 'просто непонятное описание  и картинка', 'esther',
                  'chinese/course_image/1545000059_glavnuyu.jpg')
-    lesson_to_db(1, 'Комплементы направления', theory,end_message,
+    lesson_to_db('Комплементы направления', theory,end_message,
                  'chinese_for_lamers')
 
 

@@ -60,6 +60,11 @@ class Form(StatesGroup):
     answer = State()
     finished = State()
     waiting_check = State()
+    admin = State()
+    course_new = State()
+    theory_add = State()
+    exercise = State()
+    lesson_add = State()
 
 
 @dp.message_handler(state='*', commands='cancel')
@@ -79,7 +84,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
     Если есть активгый курс предалагает продолжить его
     Если ученика нет в базе, спросит имя ученика и перейдет к добавлению нового ученика в БД
     """
-
+    await state.finish()
     sql_request = """SELECT PUPIL_NAME, cur_course
                 FROM public.pupils
                 WHERE pupil_id =%s """
@@ -114,6 +119,261 @@ async def cmd_start(message: types.Message, state: FSMContext):
     else:
         await Form.name.set()
         await message.answer("Добро пожаловать! Как вас зовут?")
+
+
+@dp.message_handler(state='*', commands='admin')
+async def admin_menu(message: types.Message, state: FSMContext):
+    await Form.admin.set()
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(
+        text=f"Создать новый курс",
+        callback_data='add_new'))
+    keyboard.add(types.InlineKeyboardButton(
+        text=f"Назад",
+        callback_data='course_menu'))
+    await message.reply('Добро пожаловать в панель Админстратора.', reply_markup=keyboard)
+
+
+@dp.callback_query_handler(state=Form.admin, text='add_new')
+async def add_new_course(call: types.CallbackQuery):
+    '''
+    иницилизирует создание курса
+    '''
+    await call.message.answer('Вы находитесь в меню создания курса, внимательно следуйте интсрукциям в сообщениях')
+    await Form.course_new.set()
+    await call.message.answer('Введите название курса')
+
+
+@dp.message_handler(state=Form.course_new, content_types=['photo', 'text'])
+async def new_course_name(message: types.Message, state: FSMContext):
+    '''
+    Ввод краткого описания курса
+    '''
+    async with state.proxy() as course_dict:
+        if 'course_name' not in course_dict:
+            course_dict['course_name'] = message.text
+            if 'course_author' and 'course_description' in course_dict:
+                '''
+                Для случая когда имя курса повторилось в бд
+                '''
+                keyboard = types.InlineKeyboardMarkup()
+                keyboard.add(types.InlineKeyboardButton(
+                    text="Сохранить",
+                    callback_data="new_theory"))
+                keyboard.add(types.InlineKeyboardButton(
+                    text=f"Изменить",
+                    callback_data="reset"))
+                if course_dict['course_image']:
+                    await message.answer_photo(types.InputFile(course_dict['course_image']),
+                                               caption=(f"Проверьте введенные данные\033[1m\n"
+                                                        f"Название: {course_dict['course_name']}\n"
+                                                        f"Автор: {course_dict['course_author']}\n"
+                                                        f"Краткое описание:\n{course_dict['course_description']}"),
+                                               reply_markup=keyboard)
+                else:
+                    await message.answer((f" <b>Проверьте введенные данные</b>\n\n"
+                                          f"Название: {course_dict['course_name']}\n"
+                                          f"Автор: {course_dict['course_author']}\n"
+                                          f"Краткое орисание:\n{course_dict['course_description']}"),
+                                         reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
+            else:
+                await message.answer('Введите автора курса')
+        else:
+            if 'course_author' not in course_dict:
+                course_dict['course_author'] = message.text
+                await message.answer('Введите краткое описание курса')
+            else:
+                if 'course_description' not in course_dict:
+                    course_dict['course_description'] = message.text
+                    await message.answer(
+                        'Если хотите добавить логотип курса отправьте его картинкой, если нет напишите нет')
+                else:
+                    if message.photo:
+                        await message.photo[-1].download(
+                            destination_file=course_dict['course_name'] + '\\' + course_dict[
+                                'course_name'] + '.jpg')
+                        course_dict['course_image'] = course_dict['course_name'] + '\\' + course_dict[
+                            'course_name'] + '.jpg'
+                    else:
+                        course_dict['course_image'] = None
+                    keyboard = types.InlineKeyboardMarkup()
+                    keyboard.add(types.InlineKeyboardButton(
+                        text="Сохранить",
+                        callback_data="save_course"))
+                    keyboard.add(types.InlineKeyboardButton(
+                        text=f"Изменить",
+                        callback_data="reset_course"))
+                    if course_dict['course_image']:
+                        await message.answer_photo(types.InputFile(course_dict['course_image']),
+                                                   caption=(f" <b>Проверьте введенные данные</b>\n\n"
+                                                            f"Название: {course_dict['course_name']}\n"
+                                                            f"Автор: {course_dict['course_author']}\n"
+                                                            f"Краткое описание:\n{course_dict['course_description']}"),
+                                                   parse_mode=types.ParseMode.HTML, reply_markup=keyboard)
+                    else:
+                        await message.answer((f" <b>Проверьте введенные данные</b>\n\n"
+                                              f"Название: {course_dict['course_name']}\n"
+                                              f"Автор: {course_dict['course_author']}\n"
+                                              f"Краткое орисание:\n{course_dict['course_description']}"),
+                                             reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
+
+
+@dp.callback_query_handler(Text(startswith="reset"), state="*")
+async def change_data(call: types.CallbackQuery, state: FSMContext):
+    """Сбрасывает введенные данные"""
+    async with state.proxy() as course_dict:
+        if call.data[6:] == 'course':
+            for key in ('course_name', 'course_author', 'course_description', 'course_image'):
+                course_dict.pop(key, None)
+            await Form.course_new.set()
+            await call.message.answer('Введите название курса')
+        if call.data[6:] == 'theory':
+            for key in ('lesson', 'theory', 'end_message'):
+                course_dict.pop(key, None)
+            await Form.lesson_add.set()
+            await call.message.answer('Введите название урока')
+
+
+@dp.callback_query_handler(state=Form.course_new, text='save_course')
+async def save_course(call: types.CallbackQuery, state: FSMContext):
+    async with state.proxy() as course_dict:
+        insert_query = """ INSERT INTO course (course_name,course_author,course_description, course_image ) VALUES (%s,%s,%s,%s)"""
+        try:
+            sql_conn(insert_query, (
+                course_dict['course_name'], course_dict['course_author'], course_dict['course_description'],
+                course_dict['course_image']))
+            await Form.lesson_add.set()
+            await call.message.answer('Введите название урока')
+        except:
+            del course_dict['course_name']
+            await call.message.answer('Курc с таким названием уже существует, выберите другое название')
+
+
+@dp.message_handler(state=Form.lesson_add, content_types=['text', 'photo', 'audio'])
+async def new_lesson(message: types.Message, state: FSMContext):
+    async with state.proxy() as course_dict:
+        if 'lesson' in course_dict:
+            if message.text:
+                course_dict['theory'].append(message.text)
+            elif message.photo:
+                await message.photo[-1].download(
+                    destination_dir=course_dict['course_name'] + "\\" + course_dict['lesson'])
+                course_dict['theory'].append(course_dict['course_name'] + '\\' + course_dict[
+                    'lesson'] + '.jpg')
+            elif message.audio:
+                await message.audio[-1].download(
+                    destination_dir=course_dict['course_name'] + "\\" + course_dict['lesson'])
+                course_dict['theory'].append(course_dict['course_name'] + '\\' + course_dict[
+                    'lesson'] + '.mp3')
+            else:
+                await message.answer('Недопустимый формат сообщения возможны текст,фото, и аудио')
+        else:
+            if message.text:
+                course_dict['lesson'] = message.text
+                course_dict['theory'] = []
+                course_dict['course_image'] = []
+                keyboard = types.InlineKeyboardMarkup()
+                keyboard.add(types.InlineKeyboardButton(
+                    text="готово",
+                    callback_data="end_messages"))
+                await message.answer(
+                    "Теперь введите теорию, ее можно посылать текстом в картинках и и аудио,вы можете посылать ее несколькими сообщениями,они будут выводится последовательно, когда закончите с вводом ВСЕЙ теории нажмите готово",
+                    reply_markup=keyboard)
+            else:
+                await message.answer('Недопустимый формат имени урока')
+
+
+@dp.callback_query_handler(state=Form.lesson_add, text='end_messages')
+async def state_end_messages(call: types.CallbackQuery, state: FSMContext):
+    await Form.theory_add.set()
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(
+        text="готово",
+        callback_data="show_theory"))
+    await call.message.answer('Добавьте сообщения которые будут выводится при успешном прохождения урока'
+                              'вы можете посылать их несколькими сообщениями,они будут выводится последовательно, когда закончите ВСЕ сообщения нажмите готово',
+                              reply_markup=keyboard)
+
+
+@dp.message_handler(state=Form.theory_add, content_types=['text', 'photo', 'audio'])
+async def add_end_message(message: types.Message, state: FSMContext):
+    async with state.proxy() as course_dict:
+        if message.text:
+            course_dict['end_message'].append(message.text)
+        elif message.photo:
+            await message.photo[-1].download(
+                destination_dir=course_dict['course_name'] + "\\" + course_dict['lesson'] + "\\end_message")
+            course_dict['end_message'].append(
+                course_dict['course_name'] + '\\' + course_dict['lesson'] + "\\end_message" + '.jpg')
+        elif message.audio:
+            await message.audio[-1].download(
+                destination_dir=course_dict['course_name'] + '\\' + course_dict['lesson'] + "\\end_message")
+            course_dict['end_message'].append(
+                course_dict['course_name'] + '\\' + course_dict['lesson'] + "\\end_message" + '.mp3')
+        else:
+            await message.answer('Недопустимый формат сообщения возможны текст,фото, и аудио')
+
+
+@dp.callback_query_handler(state=[Form.theory_add, Form.theory_add], text='show_theory')
+async def show_theory(call: types.CallbackQuery, state: FSMContext):
+    async with state.proxy() as course_dict:
+        for msg in course_dict['theory']:
+            if os.path.exists(msg):
+                if i < 10:
+                    media.attach_photo(types.InputFile(msg))
+                    i += 1
+                else:
+                    await  call.message.answer_media_group(media=media)
+                    media = types.MediaGroup()
+                    i = 0
+                    await sleep(0.5)
+            else:
+                try:
+                    await  call.message.answer_media_group(media=media)
+                    media = types.MediaGroup()
+                except:
+                    pass
+                await sleep(0.5)
+                await call.message.answer(msg)
+        try:
+            await  call.message.answer_media_group(media=media)
+        except:
+            pass
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton(
+            text="Сохранить",
+            callback_data="save_theory"))
+        keyboard.add(types.InlineKeyboardButton(
+            text=f"Изменить",
+            callback_data="delete_theory"))
+        await call.message.answer((
+            f" <b>Проверьте введенные данные. При нажатия изменить сброситься вся теория и ее придется вводить заново!!</b >\n\n"
+        ),
+            reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
+
+
+@dp.callback_query_handler(state=[Form.theory_add, Form.theory_add], text='delete_theory')
+async def delete_theory(call: types.CallbackQuery, state: FSMContext):
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(
+        text="Сохранить",
+        callback_data="save_theory"))
+    keyboard.add(types.InlineKeyboardButton(
+        text=f"Удалить",
+        callback_data="reset_theory"))
+    await call.message.answer("Вы уверены?", reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
+
+
+@dp.callback_query_handler(state=Form.theory_add, text='save_theory')
+async def save_theory(call: types.CallbackQuery, state: FSMContext):
+    async with state.proxy() as course_dict:
+        insert_data=[]
+        for key in ( 'theory', 'end_message'):
+            insert_data.append(course_dict.pop(key, None))
+        insert_query = """ INSERT INTO lesson (LESSON_NAME, THEORY,end_message, COURSE_NAME ) VALUES (%s,%s,%s,%s)"""
+        sql_conn(insert_query,
+                 (course_dict['lesson'],insert_data[0],insert_data[1],course_dict['course_name']))
+        await call.message.answer('Недопустимый формат сообщения возможны текст,фото, и аудио')
 
 
 @dp.callback_query_handler(state='*', text='course_menu')
@@ -169,7 +429,7 @@ async def course_detailed(call: types.CallbackQuery):
         await call.message.answer_photo(types.InputFile(course_info[3]),
                                         caption=(f"Название: {course_info[0]}\n"
                                                  f"Автор: {course_info[1]}\n"
-                                                 f"Краткое орисание:\n{course_info[2]}"),
+                                                 f"Краткое описание:\n{course_info[2]}"),
                                         reply_markup=keyboard)
     else:
         await call.message.answer(
@@ -193,8 +453,9 @@ async def create_lesson(call: types.CallbackQuery, state: FSMContext):
         await start_lesson(call, state)
     else:
         sql_request = """ SELECT MIN(EXERCISE_ID) FROM EXERCISES JOIN 
-        lesson on lesson.lesson_id=exercises.lesson
-         GROUP BY LESSON_NAME=%s """
+        lesson on lesson.lesson_id=exercises.lesson_id
+        WHERE COURSE_NAME = %s
+        GROUP BY LESSON_NAME """
         exercise = sql_conn(sql_request, (call.data[7:],))
         sql_request = """ INSERT INTO PUPIL_PROGRESS (PUPIL_ID, COURSE_NAME,CUR_EXERCISE) VALUES (%s, %s, %s) """
         sql_conn(sql_request, (call.message.chat.id, call.data[7:], exercise[0][0],))
@@ -210,19 +471,22 @@ async def start_lesson(call: types.CallbackQuery, state: FSMContext = FSMContext
         Снчаал посылает приветсвенные сообщения, после стартовую картинку если есть,
         После теорию
     """
-    sql_request = """SELECT LESSON_NAME, LESSON_ID , END_MESSAGE FROM exercises 
+    sql_request = """SELECT LESSON_NAME, exercises.LESSON_ID , END_MESSAGE FROM exercises 
     JOIN pupil_progress on pupil_progress.cur_exercise=exercises.exercise_id 
-    JOIN lesson on lesson.lesson_id=exercises.lesson 
+    JOIN lesson on lesson.lesson_id=exercises.lesson_id 
     WHERE pupil_progress.pupil_id =%s and pupil_progress.course_name=%s"""
     pupil_info = sql_conn(sql_request, (call.message.chat.id, call.data[7:]))
+
     async with state.proxy() as data:
         data['lesson_id'] = pupil_info[0][1]
         data['end_message'] = pupil_info[0][2]
+        data['course_name'] = call.data[7:]
         data['course_name'] = call.data[7:]
         sql_request = """SELECT THEORY  
                            FROM LESSON
                             WHERE LESSON_ID = %s """
         theory = sql_conn(sql_request, (data['lesson_id'],))
+
         media = types.MediaGroup()
         i = 0
         '''
@@ -290,7 +554,7 @@ async def check_answer(message: types.Message, state: FSMContext):
         if message.text == data['answer']['right_answer']:
             await message.answer(f"Верно, Молодец {data['pupil_name']}!", reply_markup=types.ReplyKeyboardRemove())
             sql_request = """SELECT EXERCISE_ID FROM public.exercises
-                               WHERE LESSON = %s AND EXERCISE_ID>%s"""
+                               WHERE LESSON = %s AND EXERCISE_ID>%s LIMIT 1"""
             exersizes = sql_conn(sql_request, (data['lesson_id'],
                                                data['answer']['exercise_id']))
             if exersizes:  # Проверяет есть ли еще вопросы, если нет то проверяет остались ли уроки
@@ -306,9 +570,14 @@ async def check_answer(message: types.Message, state: FSMContext):
                 sql_request = """SELECT MAX(LESSON) FROM public.exercises"""
                 last_lesson = sql_conn(sql_request)
                 if last_lesson[0][0] != data['lesson_id']:
+                    sql_request = """SELECT LESSON_ID  
+                                           FROM LESSON
+                                            WHERE COURSE_NAME = %s AND LESSON_ID>%s LIMIT 1"""
+                    lessons = sql_conn(sql_request, (data['course_name'],))
+                    data['lesson_id'] = lessons[0][0]
                     sql_request = """UPDATE pupil_progress SET cur_exercise = (SELECT MIN(EXERCISE_ID) FROM public.exercises 
                     WHERE LESSON=%s), WHERE pupil_id = %s """
-                    sql_conn(sql_request, (data['lesson_id'] + 1, message.from_user.id))
+                    sql_conn(sql_request, (data['lesson_id'], message.from_user.id))
                     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
                     await Form.lesson.set()
                     keyboard.add('Да')
