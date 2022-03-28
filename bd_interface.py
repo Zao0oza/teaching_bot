@@ -16,11 +16,14 @@ try:
 
     cursor = connection.cursor()
 
+    connection.commit()
     create_table_query = '''CREATE TABLE course
                                     (course_name     TEXT primary key,
                                     course_description      TEXT,
                                     course_author      TEXT,
-                                    course_image TEXT
+                                    course_image TEXT,
+                                    is_active boolean DEFAULT FALSE,
+                                    is_free boolean DEFAULT TRUE
                                     ); '''
     # Выполнение команды: это создает новую таблицу
     cursor.execute(create_table_query)
@@ -67,6 +70,9 @@ try:
                              (PUPIL_ID         INTEGER    NOT NULL  primary key,
                              PUPIL_NAME      TEXT    NOT NULL,
                              CUR_COURSE TEXT,
+                             IS_TEACHER boolean DEFAULT FALSE,
+                             IS_ADMIN boolean DEFAULT FALSE,  
+                             AVAILABLE_COURSES TEXT[],
                              FOREIGN KEY (CUR_COURSE) REFERENCES COURSE (COURSE_NAME) ON DELETE SET DEFAULT); '''
     # Выполнение команды: это создает новую таблицу
     cursor.execute(create_table_query)
@@ -79,8 +85,6 @@ try:
                              CUR_EXERCISE INTEGER,
                              FOREIGN KEY (CUR_EXERCISE) REFERENCES exercises (EXERCISE_ID) ON DELETE  SET DEFAULT,
                              COURSE_NAME TEXT,
-                             IS_TEACHER boolean DEFAULT FALSE,
-                             IS_ADMIN boolean DEFAULT FALSE,  
                              FOREIGN KEY (COURSE_NAME) REFERENCES COURSE (COURSE_NAME) ON DELETE  SET DEFAULT); '''
 
     # Выполнение команды: это создает новую таблицу
