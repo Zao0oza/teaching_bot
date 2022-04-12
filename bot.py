@@ -237,7 +237,6 @@ async def save_course(call: types.CallbackQuery, state: FSMContext):
     async with state.proxy() as course_dict:
         insert_query = """ INSERT INTO course (course_name,course_author,course_description, course_image, course_creator ) VALUES (%s,%s,%s,%s,%s)"""
         try:
-            print( call.from_user.id)
             sql_conn(insert_query, (course_dict['course_name'], course_dict['course_author'], course_dict['course_description'],                course_dict['course_image'], call.from_user.id))
             await Form.lesson_add.set()
             await call.message.answer('Введите название урока')
