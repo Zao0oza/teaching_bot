@@ -164,10 +164,10 @@ def insert_for_chinese_db():
             continue
         theory.append(os.path.join(dirname, file))
     end_message=['Отлично😍 Ты со всем справился! Теперь можно и отдохнуть✨','Кстати, завтра не будет никакой грамматики, обещаю!']
-    course_to_db('chinese_for_lamers', 'просто непонятное описание  и картинка', 'esther',
+    course_to_db('chinese_for_lamers_5', 'просто непонятное описание  и картинка', 'esther',
                  'chinese/course_image/1545000059_glavnuyu.jpg')
     lesson_to_db('Комплементы направления', theory,end_message,
-                 'chinese_for_lamers')
+                 'chinese_for_lamers_5')
 
 
 
@@ -182,7 +182,7 @@ def insert_for_chinese_db():
     exercise_to_db(
         ['Второе задание немного сложнее, но если ты прочитал дополнительную грамматику, то сможешь его выполнить!',
          '1. 这个电视剧太精彩了，我再困也要坚持看'], ['起来', '过去', '下来'], '下去', 1)
-    exercise_to_db(['2. 这个孩子看______缺乏营养，面黃肌瘦的。'], ['上来', '下来', '下去'], '上去', 1)
+    exercise_to_db(['2. 这个孩子看______缺乏营养，面黃肌瘦的。'], ['上来', '下来', '下去'], '上去', 4)
 
 
 insert_for_chinese_db()
