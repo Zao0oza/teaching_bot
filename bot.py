@@ -57,6 +57,8 @@ class Form(StatesGroup):
     """
     Класс состояний для реализации конечных автоматов
     """
+    del_pupil = State()
+    add_pupil = State()
     delete_course = State()
     right_answer = State()
     name = State()
@@ -110,7 +112,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
                 reply_markup=keyboard)
         else:  # отправляет доступные курсы
             sql_request = """SELECT COURSE_NAME 
-                            FROM public.course
+                            FROM public.course WHERE is_active=True
                             """
             course_info = sql_conn(sql_request)
             keyboard = types.InlineKeyboardMarkup()
@@ -128,18 +130,19 @@ async def cmd_start(message: types.Message, state: FSMContext):
 
 @dp.message_handler(state='*', commands='admin')
 async def admin_menu(message: types.Message, state: FSMContext):
-    await Form.admin.set()
-    keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton(
-        text=f"Создать новый курс",
-        callback_data='add_new'))
-    keyboard.add(types.InlineKeyboardButton(
-        text=f"Управления курсами",
-        callback_data='course_menu_admin'))
-    keyboard.add(types.InlineKeyboardButton(
-        text=f"Назад",
-        callback_data='course_menu'))
-    await message.reply('Добро пожаловать в панель Админстратора.', reply_markup=keyboard)
+    request = """SELECT is_admin, is_teacher FROM PUPILS 
+    PUPILS WHERE PUPIL_ID= %s """
+    status = sql_conn(request, (message.from_user.id,))
+    if status[0][0] or status[0][1]:
+        await Form.admin.set()
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton(
+            text=f"Создать новый курс",
+            callback_data='add_new'))
+        keyboard.add(types.InlineKeyboardButton(
+            text=f"Управления курсами",
+            callback_data='course_menu_admin'))
+        await message.reply('Добро пожаловать в панель Админстратора.', reply_markup=keyboard)
 
 
 @dp.callback_query_handler(state=Form.admin, text='add_new')
@@ -149,7 +152,7 @@ async def add_new_course(call: types.CallbackQuery, state: FSMContext):
     '''
     async with state.proxy() as course_dict:
         course_dict.clear()
-    await call.message.answer('Вы находитесь в меню создания курса, внимательно следуйте интсрукциям в сообщениях')
+    await call.message.answer('Вы находитесь в меню создания курса, внимательно следуйте инструкциям в сообщениях')
     await Form.course_new.set()
 
     await call.message.answer('Введите название курса')
@@ -232,11 +235,11 @@ async def new_course_name(message: types.Message, state: FSMContext):
 @dp.callback_query_handler(state=Form.course_new, text='save_course')
 async def save_course(call: types.CallbackQuery, state: FSMContext):
     async with state.proxy() as course_dict:
-        insert_query = """ INSERT INTO course (course_name,course_author,course_description, course_image ) VALUES (%s,%s,%s,%s)"""
+        insert_query = """ INSERT INTO course (course_name,course_author,course_description, course_image, course_creator ) VALUES (%s,%s,%s,%s)"""
         try:
             sql_conn(insert_query, (
                 course_dict['course_name'], course_dict['course_author'], course_dict['course_description'],
-                course_dict['course_image']))
+                course_dict['course_image'], call.from_user.id))
             await Form.lesson_add.set()
             await call.message.answer('Введите название урока')
         except:
@@ -264,19 +267,15 @@ async def new_lesson(message: types.Message, state: FSMContext):
                         course_dict['theory'].append(os.path.join(dirname, file))
                 if message.caption:
                     course_dict['theory'].append(message.caption)
-            elif message.audio:
-                await message.audio[-1].download(
-                    destination_file=course_dict['course_name'] + '/' + course_dict['lesson'] + "/" + str(
-                        message.message_id) + '.mp3')
-                course_dict['theory'].append(
-                    course_dict['course_name'] + '/' + course_dict['lesson'] + "/" + str(message.message_id) + '.mp3')
             else:
-                await message.answer('Недопустимый формат сообщения возможны текст,фото, и аудио')
+                await message.answer('Недопустимый формат сообщения возможны текст и фото')
         else:
             if message.text:
                 if 'lesson_names' not in course_dict:
-                    course_dict['lesson_names'] = message.text
+                    course_dict['lesson_names'] = []
+                    print(course_dict['lesson_names'])
                 if message.text not in course_dict['lesson_names']:
+                    course_dict['lesson_names'] = []
                     course_dict['lesson_names'].append(message.text)
                     course_dict['lesson'] = message.text
                     course_dict['theory'] = []
@@ -286,7 +285,7 @@ async def new_lesson(message: types.Message, state: FSMContext):
                         text="готово",
                         callback_data="end_messages"))
                     await message.answer(
-                        "Теперь введите теорию, ее можно посылать текстом в картинках и и аудио,вы можете посылать ее несколькими сообщениями,они будут выводится последовательно, когда закончите с вводом ВСЕЙ теории нажмите готово",
+                        "Теперь введите теорию, ее можно посылать текстом и в картинках, вы можете посылать ее несколькими сообщениями,они будут выводится последовательно, когда закончите с вводом ВСЕЙ теории нажмите готово",
                         reply_markup=keyboard)
                 else:
                     await message.answer('Урок с таким названием уже существует')
@@ -308,7 +307,7 @@ async def state_end_messages(call: types.CallbackQuery, state: FSMContext):
                               reply_markup=keyboard)
 
 
-@dp.message_handler(state=Form.theory_add, content_types=['text', 'photo', 'audio'])
+@dp.message_handler(state=Form.theory_add, content_types=['text', 'photo'])
 async def add_end_message(message: types.Message, state: FSMContext):
     async with state.proxy() as course_dict:
         if message.text:
@@ -325,11 +324,6 @@ async def add_end_message(message: types.Message, state: FSMContext):
                     course_dict['theory'].append(os.path.join(dirname, file))
             if message.caption:
                 course_dict['end_message'].append(message.caption)
-        elif message.audio:
-            await message.audio[-1].download(
-                destination_file=course_dict['course_name'] + '/' + course_dict['lesson'] + "/end_message" + '.mp3')
-            course_dict['end_message'].append(
-                course_dict['course_name'] + '/' + course_dict['lesson'] + "/end_message" + '.mp3')
         else:
             await message.answer('Недопустимый формат сообщения возможны текст,фото, и аудио')
 
@@ -417,7 +411,7 @@ async def save_theory(call: types.CallbackQuery, state: FSMContext):
             reply_markup=keyboard)
 
 
-@dp.message_handler(state=Form.exercise, content_types=['text', 'photo', 'audio'])
+@dp.message_handler(state=Form.exercise, content_types=['text', 'photo'])
 async def add_exercise(message: types.Message, state: FSMContext):
     async with state.proxy() as course_dict:
         if 'exercise' not in course_dict:
@@ -436,13 +430,6 @@ async def add_exercise(message: types.Message, state: FSMContext):
                     course_dict['exercise'].append(os.path.join(dirname, file))
             if message.caption:
                 course_dict['exercise'].append(message.text)
-        elif message.audio:
-            await message.audio[-1].download(
-                destination_file=course_dict['course_name'] + '/' + course_dict['lesson'] + "/exercise" + str(
-                    message.message_id) + '.mp3')
-            course_dict['exercise'].append(
-                course_dict['course_name'] + '/' + course_dict['lesson'] + "/exercise" + str(
-                    message.message_id) + '.mp3')
         else:
             await message.answer('Недопустимый формат сообщения возможны текст,фото, и аудио')
 
@@ -552,39 +539,6 @@ async def delete_confirmation(call: types.CallbackQuery, state: FSMContext):
     await call.message.answer("Вы уверены?", reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
 
 
-@dp.callback_query_handler(Text(startswith="reset"), state="*")
-async def reset_data(call: types.CallbackQuery, state: FSMContext):
-    """Сбрасывает введенные данные"""
-    async with state.proxy() as course_dict:
-        if call.data[6:] == 'course':
-            for key in ('course_name', 'course_author', 'course_description', 'course_image'):
-                course_dict.pop(key, None)
-            await Form.course_new.set()
-            await call.message.answer('Введите название курса')
-        elif call.data[6:] == 'theory':
-            for key in ('lesson', 'theory', 'end_message'):
-                course_dict.pop(key, None)
-            dirname = os.path.join(course_dict['course_name'], course_dict['lesson'], "theory")
-            shutil.rmtree(dirname)
-            await Form.lesson_add.set()
-            await call.message.answer('Введите название урока')
-        elif call.data[6:] == 'exercise':
-            for key in ('exercise', 'choices', 'right_answer'):
-                course_dict.pop(key, None)
-            await Form.exercise.set()
-            keyboard = types.InlineKeyboardMarkup()
-            keyboard.add(types.InlineKeyboardButton(
-                text="готово",
-                callback_data="add_choices"))
-            await call.message.answer(
-                'Теперь добавьте вопросы они могут в формате текста или изображения, по окончанию добавления нажмите готово',
-                reply_markup=keyboard)
-        elif call.data[6:] == 'lesson':
-            for key in ('exercise', 'choices', 'right_answer', 'lesson', 'theory', 'end_message'):
-                course_dict.pop(key, None)
-                await Form.lesson_add.set()
-
-
 @dp.callback_query_handler(Text(startswith="adding_finished"), state="*")
 async def adding_finished(call: types.CallbackQuery, state: FSMContext):
     keyboard = types.InlineKeyboardMarkup()
@@ -593,9 +547,12 @@ async def adding_finished(call: types.CallbackQuery, state: FSMContext):
         callback_data="reset_lesson"))
     keyboard.add(types.InlineKeyboardButton(
         text="Завершить",
-        callback_data="course_menu"))
+        callback_data="course_menu_admin"))
     await call.message.answer(
-        'Поздравляю вы успешно создали свой первый урок, чтобы закончить нажмите, Завершить',
+        'Поздравляю вы успешно создали свой первый урок, чтобы закончить нажмите, Завершить, по умолчанию курс после '
+        'создания имеет статус неактивный, чтоб курс стал активным и отображался в меню курсов, измените его статус в '
+        'меню управления курсами, там же вы можете установить будет ли курс бесплатным для всех, или добавить '
+        'пользователей имеющих доступ к курсу',
         reply_markup=keyboard)
 
 
@@ -632,21 +589,67 @@ async def course_menu(call: types.CallbackQuery):
             reply_markup=keyboard)
 
 
+@dp.callback_query_handler(Text(startswith="reset"), state="*")
+async def reset_data(call: types.CallbackQuery, state: FSMContext):
+    """Сбрасывает введенные данные"""
+    async with state.proxy() as course_dict:
+        if call.data[6:] == 'course':
+            for key in ('course_name', 'course_author', 'course_description', 'course_image'):
+                course_dict.pop(key, None)
+            await Form.course_new.set()
+            await call.message.answer('Введите название курса')
+        elif call.data[6:] == 'theory':
+            for key in ('lesson', 'theory', 'end_message'):
+                course_dict.pop(key, None)
+            dirname = os.path.join(course_dict['course_name'], course_dict['lesson'], "theory")
+            shutil.rmtree(dirname)
+            await Form.lesson_add.set()
+            await call.message.answer('Введите название урока')
+        elif call.data[6:] == 'exercise':
+            for key in ('exercise', 'choices', 'right_answer'):
+                course_dict.pop(key, None)
+            await Form.exercise.set()
+            keyboard = types.InlineKeyboardMarkup()
+            keyboard.add(types.InlineKeyboardButton(
+                text="готово",
+                callback_data="add_choices"))
+            await call.message.answer(
+                'Теперь добавьте вопросы они могут в формате текста или изображения, по окончанию добавления нажмите готово',
+                reply_markup=keyboard)
+        elif call.data[6:] == 'lesson':
+            for key in ('exercise', 'choices', 'right_answer', 'lesson', 'theory', 'end_message'):
+                course_dict.pop(key, None)
+                await Form.lesson_add.set()
+
+
 @dp.callback_query_handler(state='*', text='course_menu_admin')
 async def course_menu_admin(call: types.CallbackQuery):
     '''
-    Админ панель для курсов, выводить все доступные курсы
+    Админ панель для курсов, выводит все доступные курсы? если пользователь администратор,
+    если учитель, то только курсы созданные пользователем
     '''
-    sql_request = """SELECT COURSE_NAME,is_active
-                    FROM public.course
-                    """
-    course_info = sql_conn(sql_request)
+    request = """SELECT is_admin FROM PUPILS 
+    PUPILS WHERE PUPIL_ID= %s """
+    is_admin = sql_conn(request, (call.from_user.id,))
+    if is_admin[0][0]:
+        sql_request = """SELECT COURSE_NAME,is_active
+                        FROM public.course
+                        """
+        course_info = sql_conn(sql_request)
+    else:
+        sql_request = """SELECT COURSE_NAME,is_active
+                        FROM public.course WHERE course_creator =%s
+                        """
+        course_info = sql_conn(sql_request, (call.from_user.id,))
     keyboard = types.InlineKeyboardMarkup()
     for course in course_info:
         status = 'активен' if course[1] else 'не активен'
         keyboard.add(types.InlineKeyboardButton(
             text=f'{course[0]} - {status}',
             callback_data='admin_course_' + course[0]))
+    keyboard.add(types.InlineKeyboardButton(
+        text=f"Назад",
+        callback_data='admin_menu'))
     await call.message.answer(
         f" Выберите интересующий вас курс",
         reply_markup=keyboard, parse_mode=types.ParseMode.HTML)
@@ -659,23 +662,34 @@ async def course_detailed_admin(call: types.CallbackQuery):
     Название, автора, краткое описание, логотип если есть
     """
     await Form.admin.set()
-    sql_request = """SELECT COURSE_NAME, COURSE_AUTHOR, COURSE_DESCRIPTION, COURSE_IMAGE, is_active
+    sql_request = """SELECT COURSE_NAME, COURSE_AUTHOR, COURSE_DESCRIPTION, COURSE_IMAGE, is_active, is_free
                     FROM course WHERE COURSE_NAME=%s
                     """
-
     course_info = sql_conn(sql_request, (call.data[13:],))[0]
+    sql_request = """SELECT LESSON_NAME, LESSON_ID
+                                   FROM LESSON
+                                    WHERE COURSE_NAME = %s """
+    lessons = sql_conn(sql_request, (call.data[13:],))
     keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton(
-        text=f"Детальный просмотр {call.data[13:]}",
-        callback_data="create_" + call.data[13:]))
+    is_free = "бесплатным" if course_info[5] else "платным"
+    for lesson in lessons:
+        keyboard.add(types.InlineKeyboardButton(
+            text=f"Урок: {lesson[0]}",
+            callback_data="admin_view_" + str(lesson[1])))
     keyboard.add(types.InlineKeyboardButton(
         text=f"Изменить статус",
         callback_data="admin_status_" + call.data[13:]))
     keyboard.add(types.InlineKeyboardButton(
+        text=f"Сделать {is_free}",
+        callback_data="admin_isfree_" + call.data[13:]))
+    keyboard.add(types.InlineKeyboardButton(
+        text=f"Меню управления учениками",
+        callback_data="admin_access_" + call.data[13:]))
+    keyboard.add(types.InlineKeyboardButton(
         text=f"Добавить урок",
         callback_data="admin_change_" + call.data[13:]))
     keyboard.add(types.InlineKeyboardButton(
-        text=f"Удалить",
+        text=f"Удалить курс",
         callback_data="admin_delete_" + call.data[13:]))
     keyboard.add(types.InlineKeyboardButton(
         text=f"Назад",
@@ -683,6 +697,7 @@ async def course_detailed_admin(call: types.CallbackQuery):
     if course_info[3]:  # проверка есть ли лого
         await call.message.answer_photo(types.InputFile(course_info[3]),
                                         caption=(f"Название: {course_info[0]}\n"
+                                                 f"Бесплатный: {course_info[5]}\n"
                                                  f"Автор: {course_info[1]}\n"
                                                  f"Краткое описание:\n{course_info[2]}\n"
                                                  f"Статус: <b>{course_info[4]}</b>\n"),
@@ -690,8 +705,9 @@ async def course_detailed_admin(call: types.CallbackQuery):
     else:
         await call.message.answer(
             f"Название: {course_info[0]}\n"
+            f"Бесплатный: {course_info[5]}\n"
             f"Автор: {course_info[1]}\n"
-            f"Краткое орисание:\n{course_info[2]}"
+            f"Краткое описание:\n{course_info[2]}"
             f"Статус: <b>{course_info[4]}</b>\n",
             reply_markup=keyboard)
 
@@ -705,9 +721,210 @@ async def admin_change_status(call: types.CallbackQuery):
     await course_detailed_admin(call)
 
 
+@dp.callback_query_handler(Text(startswith="admin_isfree_"), state='*')
+async def admin_change_is_free(call: types.CallbackQuery):
+    """Делает курсы платным или бесплатным"""
+    sql_request = """ UPDATE course SET is_free = NOT is_free  
+                    WHERE COURSE_NAME = %s """
+    sql_conn(sql_request, (call.data[13:],))
+    await course_detailed_admin(call)
+
+
+@dp.callback_query_handler(Text(startswith="admin_access_"), state='*')
+async def admin_course_access(call: types.CallbackQuery):
+    """Управляет лоступом к курсу, добавляет учеников, выволить список учеников курса"""
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(
+        text=f"Список учеников",
+        callback_data="pupil_list" + call.data[13:]))
+    keyboard.add(types.InlineKeyboardButton(
+        text=f"Добавить ученика",
+        callback_data="add_pupil" + call.data[13:]))
+    keyboard.add(types.InlineKeyboardButton(
+        text="Назад",
+        callback_data="admin_course_" + call.data[13:]))
+    await call.message.answer("Меню управления учениками", reply_markup=keyboard)
+
+
+@dp.callback_query_handler(Text(startswith="add_pupil"), state='*')
+async def admin_add_pupil(call: types.CallbackQuery, state):
+    """Управляет лоступом к курсу, добавляет учеников, выволить список учеников курса"""
+    await Form.add_pupil.set()
+    async with state.proxy() as course_name:
+        course_name['name'] = call.data[9:]
+        await call.message.answer("введите telegram id ученика которого хотите добавить ")
+
+
+@dp.message_handler(state=Form.add_pupil)
+async def admin_save_pupil(message: types.Message, state):
+    if message.text.isnumeric():
+        async with state.proxy() as course_name:
+            name = course_name['name']
+            sql_request = """ UPDATE course SET pupils_accessed =array_append (pupils_accessed,%s)  
+                                WHERE COURSE_NAME = %s """
+            sql_conn(sql_request, (message.text, course_name['name'],))
+            await Form.admin.set()
+            keyboard = types.InlineKeyboardMarkup()
+            keyboard.add(types.InlineKeyboardButton(
+                text="Назад",
+                callback_data="admin_access_" + name))
+            await message.answer("ученик успешно добавлен", reply_markup=keyboard)
+
+    else:
+        await message.answer("неверный формат id")
+
+
+@dp.callback_query_handler(Text(startswith="pupil_list"), state='*')
+async def admin_pupli_list(call: types.CallbackQuery, state):
+    await Form.admin.set()
+    """Управляет лоступом к курсу, добавляет учеников, выволить список учеников курса"""
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(
+        text="Удалить ученика",
+        callback_data="del_pupil" + call.data[10:]))
+    keyboard.add(types.InlineKeyboardButton(
+        text="Назад",
+        callback_data="admin_course_" + call.data[10:]))
+    sql_request = """ SELECT pupils_accessed FROM course  
+                        WHERE COURSE_NAME = %s """
+    pupils = sql_conn(sql_request, (call.data[10:],))
+    await  call.message.answer(text=("Список учеников имеющих доступ к курсу:", pupils), reply_markup=keyboard)
+
+
+@dp.callback_query_handler(Text(startswith="del_pupil"), state='*')
+async def admin_delete_pupil(call: types.CallbackQuery, state):
+    """Управляет лоступом к курсу, добавляет учеников, выволить список учеников курса"""
+    await Form.del_pupil.set()
+    async with state.proxy() as course_name:
+        course_name['name'] = call.data[9:]
+        await call.message.answer("введите telegram id ученика которого удалить ")
+
+
+@dp.message_handler(state=Form.del_pupil)
+async def admin_del_pupil(message: types.Message, state):
+    async with state.proxy() as course_name:
+        name = course_name['name']
+    sql_request = """ SELECT pupils_accessed FROM course  
+                        WHERE COURSE_NAME = %s """
+    pupils = sql_conn(sql_request, (course_name['name'],))
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(
+        text="Назад",
+        callback_data="admin_access_" + name))
+
+    if message.text in pupils[0][0]:
+        sql_request = """ UPDATE course SET pupils_accessed =array_remove (pupils_accessed,%s)  
+                            WHERE COURSE_NAME = %s """
+        sql_conn(sql_request, (message.text, course_name['name'],))
+        await Form.admin.set()
+
+        await message.answer("ученик успешно удален", reply_markup=keyboard)
+
+    else:
+        await message.answer("такого ученика нет", reply_markup=keyboard)
+
+
 @dp.callback_query_handler(Text(startswith="admin_change"), state='*')
-async def admin_change_course(call: types.CallbackQuery):
-    pass
+async def admin_change_course(call: types.CallbackQuery, state):
+    async with state.proxy() as course_dict:
+        course_dict['course_name'] = call.data[13:]
+        await Form.lesson_add.set()
+        await call.message.answer('Введите название урока')
+
+
+@dp.callback_query_handler(Text(startswith="admin_view"), state='*')
+async def admin_view_lesson(call: types.CallbackQuery):
+    sql_request = """SELECT THEORY,COURSE_NAME,END_MESSAGE TEXT  
+                               FROM LESSON
+                                WHERE LESSON_ID = %s """
+    theory = sql_conn(sql_request, (call.data[11:],))
+    sql_request = """SELECT EXERCISE, CHOICES, RIGHT_ANSWER, EXERCISE_ID
+                FROM public.exercises 
+                WHERE LESSON_ID =%s """
+    exercise_info = sql_conn(sql_request, (call.data[11:],))
+    media = types.MediaGroup()
+    i = 0
+    '''
+    Проверяем является ли сообщение изображением,
+    Так как media_group не может посылать больше 10 сообщений за раз, 
+    разбиваем сообщения на группы по 10
+    '''
+    for msg in theory[0][0]:
+        if os.path.exists(msg) and not os.path.isdir(msg):
+            if i < 10:
+                media.attach_photo(types.InputFile(msg))
+                i += 1
+            else:
+                await  call.message.answer_media_group(media=media)
+                media = types.MediaGroup()
+                i = 0
+                await sleep(0.5)
+        else:
+            try:
+                await  call.message.answer_media_group(media=media)
+                media = types.MediaGroup()
+            except:
+                pass
+            await sleep(0.5)
+            await call.message.answer(msg)
+    try:
+        await  call.message.answer_media_group(media=media)
+    except:
+        pass
+    media = types.MediaGroup()
+    i = 0
+    for exersice in exercise_info:
+        for msg in exersice[0]:
+            if os.path.exists(msg) and not os.path.isdir(msg):
+                if i < 10:
+                    media.attach_photo(types.InputFile(msg))
+                    i += 1
+                else:
+                    await  call.message.answer_media_group(media=media)
+                    media = types.MediaGroup()
+                    i = 0
+                    await sleep(0.5)
+            else:
+                try:
+                    await  call.message.answer_media_group(media=media)
+                    media = types.MediaGroup()
+                except:
+                    pass
+                await sleep(0.5)
+                await call.message.answer(msg)
+        try:
+            await  call.message.answer_media_group(media=media)
+        except:
+            pass
+        await call.message.answer(f"Варианты ответа: {exersice[1]}\n "
+                                  f"Правильный ответ: {exersice[2]}")
+    for msg in theory[0][2]:
+        if os.path.exists(msg) and not os.path.isdir(msg):
+            if i < 10:
+                media.attach_photo(types.InputFile(msg))
+                i += 1
+            else:
+                await  call.message.answer_media_group(media=media)
+                media = types.MediaGroup()
+                i = 0
+                await sleep(0.5)
+        else:
+            try:
+                await  call.message.answer_media_group(media=media)
+                media = types.MediaGroup()
+            except:
+                pass
+            await sleep(0.5)
+            await call.message.answer(msg)
+    try:
+        await  call.message.answer_media_group(media=media)
+    except:
+        pass
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(
+        text="Назад",
+        callback_data="admin_course_" + theory[0][1]))
+    await  call.message.answer("Конец урока", reply_markup=keyboard)
 
 
 @dp.callback_query_handler(Text(startswith="admin_delete"), state='*')
@@ -759,35 +976,46 @@ async def admin_delete_confirmed(message: types.Message, state: FSMContext):
             keyboard.add(types.InlineKeyboardButton(
                 text="Назад",
                 callback_data="course_menu_admin" + course_dict['confirm_delete']))
-            await  message.answer("Неверно, попоробуйте снова", reply_markup=keyboard)
+            await message.answer("Неверно, попоробуйте снова", reply_markup=keyboard)
 
 
 @dp.callback_query_handler(Text(startswith="course_"), state='*')
 async def course_detailed(call: types.CallbackQuery):
     """
     Показывет детальную информацию о курсе
-    Название, автора, краткое описание, логотип если есть
+    Название, автора, краткое описание, логотип если есть,
+    Проверяет есть ли у ученика доступ к курсу,
     """
-    sql_request = """SELECT COURSE_NAME, COURSE_AUTHOR, COURSE_DESCRIPTION, COURSE_IMAGE
+    sql_request = """SELECT COURSE_NAME, COURSE_AUTHOR, COURSE_DESCRIPTION, COURSE_IMAGE,is_free,pupils_accessed
                     FROM course WHERE COURSE_NAME=%s
                     """
     course_info = sql_conn(sql_request, (call.data[7:],))[0]
     keyboard = types.InlineKeyboardMarkup()
-    keyboard.add(types.InlineKeyboardButton(
-        text=f"Начать учебу в {call.data[7:]}",
-        callback_data="create_" + call.data[7:]))
+    aviable = 'Да'
+    if course_info[4]:
+        keyboard.add(types.InlineKeyboardButton(
+            text=f"Начать учебу в {call.data[7:]}",
+            callback_data="create_" + call.data[7:]))
+    elif call.from_user.id in course_info[5]:
+        keyboard.add(types.InlineKeyboardButton(
+            text=f"Начать учебу в {call.data[7:]}",
+            callback_data="create_" + call.data[7:]))
+    else:
+        aviable = 'Нет'
     keyboard.add(types.InlineKeyboardButton(
         text=f"Назад",
         callback_data="course_menu"))
     if course_info[3]:  # проверка есть ли лого
         await call.message.answer_photo(types.InputFile(course_info[3]),
                                         caption=(f"Название: {course_info[0]}\n"
+                                                 f"Доступен: {aviable}\n"
                                                  f"Автор: {course_info[1]}\n"
                                                  f"Краткое описание:\n{course_info[2]}"),
                                         reply_markup=keyboard)
     else:
         await call.message.answer(
             f"Название: {course_info[0]}\n"
+            f"Доступен: {aviable}\n"
             f"Автор: {course_info[1]}\n"
             f"Краткое орисание:\n{course_info[2]}",
             reply_markup=keyboard)
@@ -796,6 +1024,7 @@ async def course_detailed(call: types.CallbackQuery):
 @dp.callback_query_handler(Text(startswith="create_"), state='*', )
 async def create_lesson(call: types.CallbackQuery, state: FSMContext):
     '''
+
     Создает начальный прогресс курса, если его нет,
     Устанавливает ученику текущее упражнение первым из курса,
     Обновляет значение активного курса ученика на текущий
@@ -876,7 +1105,7 @@ async def start_lesson(call: types.CallbackQuery, state: FSMContext = FSMContext
 
 
 @dp.message_handler(state=Form.answer, text=("Да", 'Да, готов проверить свои знания на практике!'))
-async def send_answer(message: types.CallbackQuery, state: FSMContext):
+async def send_answer(message: types.Message, state: FSMContext):
     """
     Отправляет вопрос ученику
     """
@@ -895,9 +1124,12 @@ async def send_answer(message: types.CallbackQuery, state: FSMContext):
             shuffle(choices)
             keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
             keyboard.add(*choices)
-        for mes in data['answer']['exercise']:
-            await sleep(0.5)
-            await message.answer(mes, reply_markup=keyboard)
+
+        for msg in data['answer']['exercise']:
+            if os.path.exists(msg) and not os.path.isdir(msg):
+                await message.answer_photo(types.InputFile(msg), reply_markup=keyboard)
+            else:
+                await message.answer(msg, reply_markup=keyboard)
 
 
 @dp.message_handler(state=Form.waiting_check)
@@ -915,8 +1147,8 @@ async def check_answer(message: types.Message, state: FSMContext):
             if exersizes:  # Проверяет есть ли еще вопросы, если нет то проверяет остались ли уроки
                 sql_request = """ UPDATE pupil_progress 
                                     SET CUR_EXERCISE = %s
-                                    WHERE pupil_id = %s"""
-                sql_conn(sql_request, (exersizes[0][0], message.from_user.id))
+                                    WHERE pupil_id = %s and COURSE_NAME= %s"""
+                sql_conn(sql_request, (exersizes[0][0], message.from_user.id, data['course_name'],))
                 await send_answer(message, state)
             else:
                 media = types.MediaGroup()
@@ -973,9 +1205,8 @@ async def check_answer(message: types.Message, state: FSMContext):
                         text=f"В меню",
                         callback_data="course_menu"))
                     return await message.answer(
-                        '''Поздравляю вы успешно закончили наш курс, 
-                        надеюсь вам понравилось!!!
-                        Хотите сбросить прогресс и начать курс заново?''',
+                        '''Поздравляю вы успешно закончили курс,надеюсь вам понравилось!!! Хотите сбросить прогресс и 
+                        для того чтобы начать курс заново?''',
                         reply_markup=keyboard)
         else:
             await message.answer(
@@ -995,19 +1226,14 @@ async def process_name(message: types.Message, state: FSMContext):
                    FROM pupils
                    WHERE pupil_id =%s """
     pupil_info = sql_conn(sql_request, (message.from_user.id,))
-    sql_request = """SELECT COURSE_NAME 
-                                FROM public.course
-                                """
-    course_info = sql_conn(sql_request)
     async with state.proxy() as data:
         data['pupil_name'] = pupil_info[0][0]
     keyboard = types.InlineKeyboardMarkup()
-    for course in course_info:
-        keyboard.add(types.InlineKeyboardButton(
-            text=course[0],
-            callback_data='course_' + course[0]))
+    keyboard.add(types.InlineKeyboardButton(
+        text="Муню курсов",
+        callback_data="course_menu"))
     await message.answer(
-        f"Добро пожаловать {pupil_info[0][0]}!\n Выберите интересующий вас курс",
+        f"Добро пожаловать {pupil_info[0][0]}!, вы успешно зарегистрировались, перейдите в меню курсов чтобы выбрать интересующий вас курс",
         reply_markup=keyboard)
 
 
